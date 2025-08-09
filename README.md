@@ -13,6 +13,11 @@ Designed for simplicity: paste your VLESS link into `vless.conf`, run Docker, an
 - Default host port **9000** (change in `docker-compose.yml`)
 
 ---
+## Related Projects
+
+- [simple-xray-core](https://github.com/thejohnd0e/simple-xray-core) — a lightweight and user-friendly script for installing and managing **Xray**.  
+  You can use it to easily set up your VLESS + Reality server, which works perfectly with **VLESS-to-HTTP**.
+---
 
 ## 📁 Project Layout
 ```
