@@ -1,0 +1,9 @@
+services:
+  vless-proxy:
+    container_name: vless-to-http
+    build: .
+    ports:
+      - "9000:8080"   # host:container
+    volumes:
+      - ./vless.conf:/app/vless.conf:ro
+    restart: unless-stopped
