@@ -43,7 +43,7 @@ vless://UUID@HOST:PORT?security=reality&encryption=none&pbk=PUBLIC_KEY&fp=finger
 
 Example:
 ```
-vless://49b4b82b-73f0-4772-86ca-ca5059375c63@45.158.127.112:443?security=reality&encryption=none&pbk=6ECfTRNxRBivHM7GLIIwOhwlkDs9NyYoZ7lHZrWeU1Q&fp=firefox&sni=github.com&sid=c8aa6a68a476c885&spx=/&flow=xtls-rprx-vision
+vless://49b4b82b-73f0-4772-86ca-ca5059375c63@45.127.127.127:443?security=reality&encryption=none&pbk=6ECfTRNxRBiv7GLIIwOhwlkDs9NyYoZ7lHZrWeU1Q&fp=firefox&sni=github.com&sid=c8aa6a68a476c885&spx=/&flow=xtls-rprx-vision
 ```
 
 > Tip: keep it on a single line; comments after `#` are ignored.
