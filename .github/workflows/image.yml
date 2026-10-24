@@ -4,7 +4,7 @@ name: image
 # Runs on code changes, once a day (picks up new Xray releases) and on demand.
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths: [Dockerfile, entrypoint.sh, .github/workflows/image.yml]
   schedule:
     - cron: "17 4 * * *"
