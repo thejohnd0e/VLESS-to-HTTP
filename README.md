@@ -69,7 +69,7 @@ Supported transport query parameters:
 
 Example:
 ```
-vless://49b4b82b-73f0-4772-86ca-ca5059375c63@45.127.127.127:443?security=reality&encryption=none&pbk=6ECfTRNxRBiv7GLIIwOhwlkDs9NyYoZ7lHZrWeU1Q&fp=firefox&sni=github.com&sid=c8aa6a68a476c885&spx=/&flow=xtls-rprx-vision
+vless://49b4b82b-73f0-4772-86ca-ca5059375c63@45.127.127.127:443?security=reality&encryption=none&pbk=6ECfTRNxRBiv7GLIIwOhwlkDs9NyYoZ7lHZrWeU1Q&fp=chrome&sni=github.com&sid=c8aa6a68a476c885&spx=/&flow=xtls-rprx-vision
 ```
 
 > Tip: keep it on a single line; comments after `#` are ignored.
@@ -119,6 +119,17 @@ docker compose down
 docker compose up -d --build
 ```
 
+## ⬆️ Update the Xray core
+The image downloads the latest Xray-core when it is built, and Docker reuses that cached layer
+afterwards, so a plain `docker compose up -d --build` keeps the old core. To get the current
+release, rebuild without the cache:
+```bash
+docker compose build --pull --no-cache
+docker compose up -d
+```
+Do this when your server's Xray-core is updated: newer servers can refuse clients from older cores
+(see Troubleshooting).
+
 ---
 
 ## 🛠 Troubleshooting
@@ -131,6 +142,11 @@ docker compose up -d --build
   - Add `path=...` to the VLESS URL when `type=xhttp`.
 - **TLS errors during CONNECT**
   - Verify `flow`, `fp` (fingerprint), `sni`, `pbk`, `sid` match your server.
+- **Log shows `REALITY: received real certificate (potential MITM or redirection)`**
+  - The server did not accept the client. If `pbk`/`sid`/`sni`/UUID are right, the cause is usually an
+    old client core or an outdated fingerprint: current Xray servers reject a TLS ClientHello without
+    `X25519MLKEM768`. Use `fp=chrome` (the default when `fp` is omitted) and rebuild the image with
+    `docker compose build --pull --no-cache` (see "Update the Xray core").
 - View the generated config section in logs between:
   - `===== GENERATED CONFIG =====` … `============================`
 

@@ -28,7 +28,7 @@ PATH_RAW="$(printf '%s' "$VLESS_URL" | sed -n 's#.*[?&]path=\([^&]*\).*#\1#p')"
 HOST_RAW="$(printf '%s' "$VLESS_URL" | sed -n 's#.*[?&]host=\([^&]*\).*#\1#p')"
 MODE="$(   printf '%s' "$VLESS_URL" | sed -n 's#.*[?&]mode=\([^&]*\).*#\1#p')"
 
-[ -z "${FP:-}" ]  && FP="firefox"
+[ -z "${FP:-}" ]  && FP="chrome"
 [ -z "${SPX:-}" ] && SPX="/"
 [ -z "${TYPE:-}" ] && TYPE="tcp"
 XHTTP_PATH="$(printf '%s' "${PATH_RAW:-}" | sed 's/%2[Ff]/\//g')"
