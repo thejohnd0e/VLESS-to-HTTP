@@ -25,8 +25,19 @@ Designed for simplicity: paste your VLESS link into `vless.conf`, run Docker, an
 ---
 ## Related Projects
 
-- [simple-xray-core](https://github.com/thejohnd0e/simple-xray-core) — a lightweight and user-friendly script for installing and managing **Xray**.  
-  You can use it to easily set up your VLESS + Reality server, which works perfectly with **VLESS-to-HTTP**.
+These projects complement each other: the kits set up the servers, and the proxy containers bring a
+tunnel to your local network as a plain HTTP/SOCKS5 proxy.
+
+- [xray-vps-kit](https://github.com/thejohnd0e/xray-vps-kit) — installer, client manager and updater for an
+  **Xray VLESS + REALITY + Vision** server on your VPS. `xray-client show NAME` prints the `vless://` link
+  you paste into `vless.conf` here, so the server and this proxy work together out of the box.
+- [awg-vps-kit](https://github.com/thejohnd0e/awg-vps-kit) — one-shot **AmneziaWG (UDP)** server installer and
+  client manager for Debian/Ubuntu. Use it next to the VLESS server when you want a UDP tunnel as well; the
+  two are independent and can run on the same VPS.
+- [AmneziaWG-to-Proxy](https://github.com/thejohnd0e/AmneziaWG-to-Proxy) — the same idea as this project for
+  **AmneziaWG**: a container that brings up an AmneziaWG tunnel and exposes it as an HTTP/SOCKS5 proxy.
+  **VLESS-to-HTTP** does this for VLESS + REALITY.
+
 ---
 
 ## 📁 Project Layout
