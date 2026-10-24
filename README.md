@@ -44,7 +44,7 @@ tunnel to your local network as a plain HTTP/SOCKS5 proxy.
 ```
 VLESS-to-HTTP/
 ├── docker-compose.yml     # docker compose service
-├── Dockerfile             # image build (Xray installation)
+├── Dockerfile             # image build (CI publishes it to ghcr.io; also usable locally)
 ├── entrypoint.sh          # parses vless.conf → generates config.json
 └── vless.conf             # your VLESS Reality URL (single line)
 ```
@@ -89,7 +89,17 @@ vless://49b4b82b-73f0-4772-86ca-ca5059375c63@45.127.127.127:443?security=reality
 
 ## 🚀 Run
 ```bash
-docker compose up -d --build
+docker compose up -d
+```
+This pulls the prebuilt image `ghcr.io/thejohnd0e/vless-to-http:latest`; if it cannot be pulled, Docker
+builds the image from the `Dockerfile` instead. Only `docker-compose.yml` and `vless.conf` are needed
+to run the prebuilt image.
+
+Stop and start:
+```bash
+docker compose stop      # stop, keep the container
+docker compose start     # start it again
+docker compose down      # stop and remove the container
 ```
 
 Logs (shows the generated config and Xray output):
@@ -124,10 +134,9 @@ curl --socks5-hostname 127.0.0.1:1080 https://api.ipify.org -m 10 -v
 
 ## 🔄 Update / Change server
 1) Edit `vless.conf` with your new VLESS URL  
-2) Restart:
+2) Restart (the link is read when the container starts):
 ```bash
-docker compose down
-docker compose up -d --build
+docker compose restart
 ```
 
 ## ⬆️ Update the Xray core
@@ -171,8 +180,8 @@ Do this when your server's Xray-core is updated: newer servers can refuse client
 - **Log shows `REALITY: received real certificate (potential MITM or redirection)`**
   - The server did not accept the client. If `pbk`/`sid`/`sni`/UUID are right, the cause is usually an
     old client core or an outdated fingerprint: current Xray servers reject a TLS ClientHello without
-    `X25519MLKEM768`. Use `fp=chrome` (the default when `fp` is omitted) and rebuild the image with
-    `docker compose build --pull --no-cache` (see "Update the Xray core").
+    `X25519MLKEM768`. Use `fp=chrome` (the default when `fp` is omitted) and update the image with
+    `docker compose pull && docker compose up -d` (see "Update the Xray core").
 - View the generated config section in logs between:
   - `===== GENERATED CONFIG =====` … `============================`
 
