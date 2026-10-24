@@ -120,13 +120,28 @@ docker compose up -d --build
 ```
 
 ## ⬆️ Update the Xray core
-The image downloads the latest Xray-core when it is built, and Docker reuses that cached layer
-afterwards, so a plain `docker compose up -d --build` keeps the old core. To get the current
-release, rebuild without the cache:
+**Prebuilt image (recommended).** A GitHub Actions workflow builds `linux/amd64` and `linux/arm64`
+images with the current stable Xray-core and publishes them to
+`ghcr.io/thejohnd0e/vless-to-http` (tags `latest` and the core version, e.g. `26.10.21`). It runs
+on every change to the `Dockerfile`/`entrypoint.sh` and once a day, so a new Xray release gets a new
+image within a day. To update:
+```bash
+docker compose pull
+docker compose up -d
+```
+`docker-compose.yml` names this image and still has `build: .`, so it also builds locally when the
+image cannot be pulled.
+
+**Build it yourself.** The `Dockerfile` downloads the latest Xray-core when it is built and verifies
+the archive's SHA256 from the release's `.dgst` file. Docker reuses that cached layer afterwards, so a
+plain `docker compose up -d --build` keeps the old core. To get the current release, rebuild without
+the cache:
 ```bash
 docker compose build --pull --no-cache
 docker compose up -d
 ```
+To pin a specific core: `docker compose build --build-arg XRAY_VERSION=v26.10.21`.
+
 Do this when your server's Xray-core is updated: newer servers can refuse clients from older cores
 (see Troubleshooting).
 

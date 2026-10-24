@@ -1,6 +1,7 @@
 services:
   vless-proxy:
     container_name: vless-to-http
+    image: ghcr.io/thejohnd0e/vless-to-http:latest
     build: .
     ports:
       - "9000:8080"   # HTTP proxy
