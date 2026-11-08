@@ -77,7 +77,20 @@ wait_ok() {
   fail "$what"
 }
 
-server_saw() { docker logs v2h-srv 2>&1 | grep -q "email: $1" || fail "server log has no connection for $1"; echo "ok   - server saw $1"; }
+# log_has CONTAINER PATTERN...: true when the container log contains any of the fixed strings.
+# The log is read into a variable first: with pipefail, `docker logs | grep -q` fails when grep exits
+# early and docker logs gets SIGPIPE, which made this test flaky (and could hide a leak).
+log_has() {
+  local c="$1" text; shift
+  text="$(docker logs "$c" 2>&1 || true)"
+  local p
+  for p in "$@"; do
+    case "$text" in *"$p"*) return 0 ;; esac
+  done
+  return 1
+}
+
+server_saw() { log_has v2h-srv "email: $1" || fail "server log has no connection for $1"; echo "ok   - server saw $1"; }
 
 health() {  # expected: 0 healthy / 1 unhealthy
   local rc=0
@@ -93,8 +106,8 @@ wait_ok "HTTP proxy works through the second link" --proxy http://127.0.0.1:1900
 wait_ok "SOCKS5 proxy works" --socks5-hostname 127.0.0.1:11080
 server_saw e2e-vision
 health 0
-docker logs v2h-cli 2>&1 | grep -q '2 links, failover=leastPing' || fail "startup summary"
-if docker logs v2h-cli 2>&1 | grep -q -e "$UUID" -e "$PUB"; then fail "client log leaks UUID or key"; fi
+log_has v2h-cli '2 links, failover=leastPing' || fail "startup summary"
+if log_has v2h-cli "$UUID" "$PUB"; then fail "client log leaks UUID or key"; fi
 echo "ok   - client log has no UUID/key"
 
 echo "# 2. server down -> healthcheck fails"
@@ -130,7 +143,7 @@ host_client
 wait_ok "host mode: HTTP proxy on 19100" --proxy http://127.0.0.1:19100
 python3 tests/socks5_udp.py 127.0.0.1 11180 || fail "host mode: UDP through SOCKS5"
 echo "ok   - host mode: UDP (DNS) through SOCKS5"
-docker logs v2h-srv 2>&1 | grep -q "accepted udp:1.1.1.1:53" || fail "server saw no UDP to 1.1.1.1:53"
+log_has v2h-srv "accepted udp:1.1.1.1:53" || fail "server saw no UDP to 1.1.1.1:53"
 echo "ok   - server relayed the UDP datagram"
 health 0
 
