@@ -53,12 +53,12 @@ jobs:
           check "vless://$uuid@203.0.113.10:443?security=reality&pbk=$pbk&sni=example.com&sid=" -e PROXY_USER=alice -e 'PROXY_PASS=p"w\d'
           check "vless://$uuid@203.0.113.10:443?security=reality&type=xhttp&path=%2Fx&mode=auto&pbk=$pbk&sni=example.com&sid=ab" -e LOG_LEVEL=debug
           check "vless://$uuid@[2001:db8::1]:443?security=reality&pbk=$pbk&sni=example.com&sid=ab&type=xhttp&path=/x&extra=%7B%22xmux%22%3A%7B%22maxConcurrency%22%3A%2216-32%22%7D%7D"
-          check "$(printf '%s
-%s
-'             "vless://$uuid@203.0.113.10:443?security=reality&pbk=$pbk&sni=example.com&sid=ab&flow=xtls-rprx-vision#a"             "vless://$uuid@198.51.100.20:443?security=reality&pbk=$pbk&sni=example.com&sid=ab&type=xhttp&path=/x#b")" -e FAILOVER_STRATEGY=leastPing
-          check "$(printf '%s
-%s
-'             "vless://$uuid@203.0.113.10:443?security=reality&pbk=$pbk&sni=example.com&sid=ab"             "vless://$uuid@198.51.100.20:443?security=reality&pbk=$pbk&sni=example.com&sid=ab")" -e FAILOVER_STRATEGY=roundRobin
+          a="vless://$uuid@203.0.113.10:443?security=reality&pbk=$pbk&sni=example.com&sid=ab&flow=xtls-rprx-vision#a"
+          b="vless://$uuid@198.51.100.20:443?security=reality&pbk=$pbk&sni=example.com&sid=ab&type=xhttp&path=/x#b"
+          nl='
+          '
+          check "$a$nl$b" -e FAILOVER_STRATEGY=leastPing
+          check "$a$nl$b" -e FAILOVER_STRATEGY=roundRobin
 
       - name: Image runs as non-root and ships the healthcheck
         run: |
