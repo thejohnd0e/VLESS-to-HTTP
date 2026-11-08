@@ -21,7 +21,7 @@ Designed for simplicity: paste your VLESS link into `vless.conf`, run Docker, an
 - Auto-generated `config.json`; secrets stay out of the logs (optional masked dump with `PRINT_CONFIG=1`)
 - Optional login/password for both proxies (`PROXY_USER`/`PROXY_PASS`)
 - Minimal footprint, no host dependencies besides Docker
-- Default host ports: **9000** (HTTP/HTTPS) and **1080** (SOCKS5) on **127.0.0.1 only**, configurable in `.env`
+- Default host ports: **9000** (HTTP/HTTPS) and **1080** (SOCKS5) on all interfaces (shared with the whole LAN), configurable in `.env`
 
 ---
 ## Related Projects
@@ -113,34 +113,31 @@ docker logs -f vless-to-http
 Logs are rotated (3 × 10 MB).
 
 By default:
-- HTTP/HTTPS proxy: **http://127.0.0.1:9000**
-- SOCKS5 proxy: **socks5://127.0.0.1:1080**
+- HTTP/HTTPS proxy: **http://HOST:9000**
+- SOCKS5 proxy: **socks5://HOST:1080**
 
-Both are published on `127.0.0.1` only, so only this machine can use them.
+`HOST` is the LAN address of the machine running the container (or `127.0.0.1` on that machine itself):
+every device in your network can point its proxy settings there.
 
-## 🔐 Settings, LAN access and login
+## 🔐 Settings and optional login
 Optional settings go into `.env` next to `docker-compose.yml` (`cp .env.example .env`):
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `BIND_ADDR` | `127.0.0.1` | Host address the ports are published on |
+| `BIND_ADDR` | empty | Host address the ports are published on: empty = all interfaces (IPv4 and IPv6), a LAN address = that network only, `127.0.0.1` = this machine only |
 | `HTTP_PORT` / `SOCKS_PORT` | `9000` / `1080` | Host ports |
 | `PROXY_USER` / `PROXY_PASS` | empty | Login for both proxies (set both or neither) |
 | `LOG_LEVEL` | `warning` | `debug`, `info`, `warning`, `error`, `none`. `debug`/`info` also log every visited destination |
 | `PRINT_CONFIG` | `0` | `1` prints the generated `config.json` at startup with UUID, keys and password masked |
 
-To use the proxy from other devices in your LAN, **always set a login**, otherwise anyone who reaches the
-port can use your server:
+Without a login, any device that can reach the ports can use the proxy, which is what you want in a home
+LAN. If the host is also reachable from untrusted networks (a public IP, a guest Wi-Fi), set a login or
+restrict `BIND_ADDR`:
 ```bash
-BIND_ADDR=0.0.0.0
 PROXY_USER=me
 PROXY_PASS=a-long-random-password
 ```
 then `docker compose up -d`. Clients use `http://me:PASSWORD@HOST:9000` or `socks5://me:PASSWORD@HOST:1080`.
-On a VPS with a public IP, prefer an SSH tunnel or a firewall rule over `0.0.0.0`.
-
-> Upgrading from an older version: the ports used to be published on all interfaces. If other devices
-> used this proxy, set `BIND_ADDR` and a login as shown above.
 
 ---
 

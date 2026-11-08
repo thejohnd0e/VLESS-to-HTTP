@@ -212,9 +212,6 @@ EOF
 
 # ---- startup summary (no UUID, keys or password) ----
 echo "VLESS-to-HTTP: server=${SERVER}:${PORT} type=${TYPE} sni=${SNI} fp=${FP} flow=${FLOW:-none} auth=${AUTH} loglevel=${LOG_LEVEL}"
-if [ "$AUTH" = off ]; then
-  echo "WARN: proxy authentication is off; publish the ports on 127.0.0.1 only, or set PROXY_USER/PROXY_PASS" >&2
-fi
 
 # ---- optional: print the generated config with secrets masked ----
 if [ "$PRINT_CONFIG" = 1 ]; then

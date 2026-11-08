@@ -21,6 +21,16 @@ jobs:
       - name: Parser tests in Alpine (busybox sh/sed, as in the image)
         run: docker run --rm -v "$PWD:/w:ro" -w /w alpine:3.20 sh -c 'apk add -q --no-cache jq && sh tests/run.sh'
 
+      - name: Compose port bindings (default = all interfaces, BIND_ADDR restricts)
+        run: |
+          set -eu
+          touch vless.conf
+          ports() { docker compose config --format json | jq -c '[.services."vless-proxy".ports[] | [.host_ip, .published, .target]]'; }
+          got=$(ports);                                        echo "default:   $got"
+          [ "$got" = '[[null,"9000",8080],[null,"1080",1080]]' ]
+          got=$(BIND_ADDR=192.168.0.12 HTTP_PORT=3128 ports);   echo "restricted: $got"
+          [ "$got" = '[["192.168.0.12","3128",8080],["192.168.0.12","1080",1080]]' ]
+
       - name: Build the image
         run: docker build -t vless-to-http:test .
 

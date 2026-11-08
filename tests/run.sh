@@ -81,7 +81,7 @@ if expect_ok "default log settings"; then
   if [ "$(jqv '.log.loglevel')" = warning ] && [ "$(jqv '.log.access')" = none ]; then ok "default log settings"; else bad "default log settings" "$(jq -c .log "$CFG")"; fi
 fi
 if printf '%s' "$OUT" | grep -q -e "$UUID" -e "$PBK" -e abcd1234; then bad "default output has no secrets" "$OUT"; else ok "default output has no secrets"; fi
-check "summary + no-auth warning" "$(printf '%s' "$OUT" | grep -c -e "auth=off" -e "WARN: proxy authentication is off")" 2
+check "summary shows auth=off" "$(printf '%s' "$OUT" | grep -c "auth=off")" 1
 
 run_entry "$BASE" LOG_LEVEL=debug
 expect_ok "LOG_LEVEL=debug" && check "LOG_LEVEL=debug enables access log" "$(jq -c '[.log.loglevel, .log.access]' "$CFG")" '["debug",""]'
@@ -104,7 +104,7 @@ if expect_ok "auth with special characters"; then
   want='[{"user":"alice","pass":"p@ss \"w\\ord"}]'
   if [ "$h" = "$want" ] && [ "$s" = "[\"password\",$want]" ]; then ok "auth with special characters"; else bad "auth with special characters" "http=$h socks=$s"; fi
 fi
-check "auth on: no warning" "$(printf '%s' "$OUT" | grep -c -e "auth=on" -e WARN)" 1
+check "summary shows auth=on" "$(printf '%s' "$OUT" | grep -c "auth=on")" 1
 
 run_entry "$BASE"
 check "no auth by default" "$(jq -c '[.inbounds[1].settings.auth, .inbounds[0].settings.accounts]' "$CFG")" '["noauth",null]'
