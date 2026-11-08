@@ -275,9 +275,9 @@ EOF
 
 # ---- startup summary (no UUID, keys or password) ----
 if [ "$COUNT" -eq 1 ]; then
-  echo "VLESS-to-HTTP: 1 link, auth=${AUTH}, loglevel=${LOG_LEVEL}"
+  echo "VLESS-to-HTTP ${APP_VERSION:-dev}: 1 link, auth=${AUTH}, loglevel=${LOG_LEVEL}"
 else
-  echo "VLESS-to-HTTP: ${COUNT} links, failover=${FAILOVER_STRATEGY} (probe ${PROBE_URL} every ${PROBE_INTERVAL}), auth=${AUTH}, loglevel=${LOG_LEVEL}"
+  echo "VLESS-to-HTTP ${APP_VERSION:-dev}: ${COUNT} links, failover=${FAILOVER_STRATEGY} (probe ${PROBE_URL} every ${PROBE_INTERVAL}), auth=${AUTH}, loglevel=${LOG_LEVEL}"
 fi
 printf '%s' "$SUMMARY"
 

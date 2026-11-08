@@ -1,11 +1,20 @@
 name: image
 
-# Builds a multi-arch image with the current stable Xray-core and publishes it to ghcr.io.
-# Runs on code changes, once a day (picks up new Xray releases), once a week (rebuilds anyway to pick
-# up Alpine security updates) and on demand. Publishes only after the test workflow passes.
+# Builds the multi-arch image with the current stable Xray-core, tests it, publishes it to ghcr.io
+# and, for a release tag, creates the GitHub Release.
+#
+# What is built:
+#   push of tag vX.Y.Z    -> that release, then the GitHub Release
+#   push to master        -> edge
+#   daily schedule        -> the newest release, only when a new Xray version is out
+#   weekly schedule       -> the newest release, always (Alpine security updates)
+#   workflow_dispatch     -> the newest release
+# Release tags: X.Y.Z-xrayV (exact pair) and X.Y.Z, plus X.Y / X / latest / V (Xray version) when this
+# release is the newest in that line. Before the first release, "latest" is still built from master.
 on:
   push:
     branches: [master]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
     paths: [Dockerfile, entrypoint.sh, healthcheck.sh, .github/workflows/image.yml, .github/workflows/test.yml]
   schedule:
     - cron: "17 4 * * *"    # daily: only when a new Xray release is out
@@ -14,26 +23,99 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
-  test:
-    uses: ./.github/workflows/test.yml
-
-  image:
-    needs: test
+  plan:
     runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.plan.outputs.ref }}
+      mode: ${{ steps.plan.outputs.mode }}
+      version: ${{ steps.plan.outputs.version }}
+      xray_tag: ${{ steps.plan.outputs.xray_tag }}
+      tags: ${{ steps.plan.outputs.tags }}
+      skip: ${{ steps.plan.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Resolve the latest stable Xray-core release
-        id: xray
+      - name: Decide what to build
+        id: plan
         run: |
-          tag=$(curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r .tag_name)
-          [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "unexpected tag: $tag" >&2; exit 1; }
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
-          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/vless-to-http" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/vless-to-http"
+
+          xray_tag=$(curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r .tag_name)
+          [[ $xray_tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "unexpected Xray tag: $xray_tag" >&2; exit 1; }
+          xv=${xray_tag#v}
+
+          releases=$(git tag -l 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V || true)
+          newest=$(printf '%s\n' "$releases" | tail -n 1)
+
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            mode=release; tag=$GITHUB_REF_NAME
+          elif [[ $GITHUB_EVENT_NAME == push ]]; then
+            mode=edge; tag=""
+          elif [[ -n $newest ]]; then
+            mode=release; tag=$newest
+          else
+            mode=legacy; tag=""      # no release yet: keep publishing master as latest
+          fi
+
+          tags=()
+          case $mode in
+            release)
+              v=${tag#v}; IFS=. read -r major minor _ <<< "$v"
+              ref=$tag; version=$v
+              tags+=("$image:$v-xray$xv" "$image:$v")
+              newest_minor=$(printf '%s\n' "$releases" | grep -E "^v$major\.$minor\." | tail -n 1)
+              newest_major=$(printf '%s\n' "$releases" | grep -E "^v$major\." | tail -n 1)
+              if [[ $tag == "$newest_minor" ]]; then tags+=("$image:$major.$minor"); fi
+              if [[ $tag == "$newest_major" ]]; then tags+=("$image:$major"); fi
+              if [[ $tag == "$newest" ]]; then tags+=("$image:latest" "$image:$xv"); fi
+              check="$image:$v-xray$xv" ;;
+            edge)
+              ref=$GITHUB_SHA; version=edge
+              tags+=("$image:edge")
+              check="" ;;
+            legacy)
+              ref=$GITHUB_SHA; version=dev
+              tags+=("$image:latest" "$image:$xv")
+              check="$image:$xv" ;;
+          esac
+
+          # The daily run rebuilds only when this exact image does not exist yet (= a new Xray release).
+          skip=false
+          if [[ "${{ github.event.schedule }}" == "17 4 * * *" && -n $check ]] &&
+             docker manifest inspect "$check" > /dev/null 2>&1; then
+            skip=true
+          fi
+
+          {
+            echo "ref=$ref"; echo "mode=$mode"; echo "version=$version"; echo "xray_tag=$xray_tag"; echo "skip=$skip"
+            echo "tags<<EOF"; printf '%s\n' "${tags[@]}"; echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "mode=$mode ref=$ref version=$version xray=$xv skip=$skip"
+          printf '  %s\n' "${tags[@]}"
+
+  test:
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    uses: ./.github/workflows/test.yml
+    with:
+      ref: ${{ needs.plan.outputs.ref }}
+
+  image:
+    needs: [plan, test]
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
 
       - uses: docker/login-action@v3
         with:
@@ -41,30 +123,49 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Skip the daily run when this Xray version is already published
-        id: skip
-        run: |
-          if [[ "${{ github.event.schedule }}" == "17 4 * * *" ]] && docker manifest inspect "${{ steps.xray.outputs.image }}:${{ steps.xray.outputs.version }}" > /dev/null 2>&1; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - if: steps.skip.outputs.skip != 'true'
-        uses: docker/setup-qemu-action@v3
-
-      - if: steps.skip.outputs.skip != 'true'
-        uses: docker/setup-buildx-action@v3
-
-      - if: steps.skip.outputs.skip != 'true'
-        uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
           pull: true
           no-cache: true
-          build-args: XRAY_VERSION=${{ steps.xray.outputs.tag }}
-          tags: |
-            ${{ steps.xray.outputs.image }}:${{ steps.xray.outputs.version }}
-            ${{ steps.xray.outputs.image }}:latest
+          build-args: |
+            XRAY_VERSION=${{ needs.plan.outputs.xray_tag }}
+            APP_VERSION=${{ needs.plan.outputs.version }}
+          tags: ${{ needs.plan.outputs.tags }}
+
+  release:
+    # Only for a pushed tag: create the GitHub Release once its image is published.
+    needs: [plan, image]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAGS: ${{ needs.plan.outputs.tags }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          XRAY_TAG: ${{ needs.plan.outputs.xray_tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists"; exit 0
+          fi
+          {
+            echo "## Docker image"
+            echo
+            echo "Built with Xray-core $XRAY_TAG. Tags:"
+            echo
+            printf '%s\n' "$TAGS" | sed '/^$/d; s/^/- `/; s/$/`/'
+            echo
+            echo "Pin this release in \`.env\`: \`IMAGE_TAG=$VERSION\`, then \`docker compose pull && docker compose up -d\`."
+            echo
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "$GITHUB_REF_NAME" --notes-file notes.md --generate-notes

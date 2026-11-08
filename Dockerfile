@@ -30,6 +30,14 @@ RUN set -eux; \
 # ---- stage 2: runtime ----
 FROM alpine:3.23
 
+# Project version, set by CI (e.g. 1.0.0, or "edge"); shown in the startup log.
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+LABEL org.opencontainers.image.title="VLESS-to-HTTP" \
+      org.opencontainers.image.source="https://github.com/thejohnd0e/VLESS-to-HTTP" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${APP_VERSION}"
+
 # curl is used by the healthcheck.
 RUN apk add --no-cache ca-certificates curl \
     && addgroup -S xray && adduser -S -D -H -G xray -s /sbin/nologin xray

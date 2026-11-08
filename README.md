@@ -213,19 +213,29 @@ End-to-end test (needs Docker; starts a throwaway local server with generated ke
 docker compose restart
 ```
 
-## ⬆️ Update the Xray core
-**Prebuilt image (recommended).** A GitHub Actions workflow builds `linux/amd64` and `linux/arm64`
-images with the current stable Xray-core and publishes them to
-`ghcr.io/thejohnd0e/vless-to-http` (tags `latest` and the core version, e.g. `26.10.21`). It runs
-on every change to the image files, once a day (a new Xray release gets a new image within a day) and
-once a week (a full rebuild picks up Alpine security updates). An image is published only after the tests
-pass. To update:
+## 🏷️ Versions and updates
+Releases are tagged `vX.Y.Z` ([Releases](https://github.com/thejohnd0e/VLESS-to-HTTP/releases), with the
+list of changes). CI publishes `linux/amd64` and `linux/arm64` images to `ghcr.io/thejohnd0e/vless-to-http`:
+
+| Tag | What it is |
+|---|---|
+| `latest` | Newest release with the current stable Xray-core (default) |
+| `1`, `1.0` | Newest release in that line |
+| `1.0.0` | That release, rebuilt with each new Xray-core and weekly (Alpine updates) |
+| `1.0.0-xray26.10.31` | That release with exactly that core; never changes, use it to pin or roll back |
+| `26.10.31` | Newest release with that core |
+| `edge` | Current `master`, not a release |
+
+The newest release is rebuilt daily when a new Xray-core is out and weekly anyway; an image is published
+only after the tests pass. Update:
 ```bash
 docker compose pull
 docker compose up -d
 ```
-`docker-compose.yml` names this image and still has `build: .`, so it also builds locally when the
-image cannot be pulled.
+Pin a version (or roll back) with `IMAGE_TAG` in `.env`, e.g. `IMAGE_TAG=1.0.0-xray26.10.31`, then the same
+two commands. The version is shown in the first log line (`VLESS-to-HTTP 1.0.0: ...`).
+
+`docker-compose.yml` still has `build: .`, so it builds locally when the image cannot be pulled.
 
 **Build it yourself.** The `Dockerfile` downloads the latest Xray-core when it is built and verifies
 the archive's SHA256 from the release's `.dgst` file. Docker reuses that cached layer afterwards, so a
@@ -264,7 +274,7 @@ Do this when your server's Xray-core is updated: newer servers can refuse client
   - The server did not accept the client. If `pbk`/`sid`/`sni`/UUID are right, the cause is usually an
     old client core or an outdated fingerprint: current Xray servers reject a TLS ClientHello without
     `X25519MLKEM768`. Use `fp=chrome` (the default when `fp` is omitted) and update the image with
-    `docker compose pull && docker compose up -d` (see "Update the Xray core").
+    `docker compose pull && docker compose up -d` (see "Versions and updates").
 - To see the generated config, set `PRINT_CONFIG=1` (and `LOG_LEVEL=debug` for detailed Xray logs), restart,
   and look between `===== GENERATED CONFIG (secrets masked) =====` … `====`. Secrets are masked, but the log
   still shows your server address; check it before sharing.
