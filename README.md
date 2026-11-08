@@ -147,7 +147,7 @@ every device in your network can point its proxy settings there.
 
 ### Health
 The image has a Docker healthcheck that makes a real request to `PROBE_URL` **through the tunnel** every
-minute (via an internal port that is not published and needs no login), so `healthy` means traffic
+minute (through the container's own HTTP proxy, with the login if one is set), so `healthy` means traffic
 actually passes, not just that the port is open:
 ```bash
 docker ps                                   # STATUS shows (healthy) / (unhealthy)
@@ -171,7 +171,6 @@ Optional settings go into `.env` next to `docker-compose.yml` (`cp .env.example 
 | `PROBE_URL` | `https://www.gstatic.com/generate_204` | Requested through the tunnel by the failover probes and the healthcheck; must answer 2xx/3xx |
 | `PROBE_INTERVAL` | `1m` | Pause between failover probe rounds (`30s`, `1m`, `5m`, ...) |
 | `COMPOSE_FILE` | not set | `docker-compose.yml:docker-compose.host.yml` = host network mode for UDP, see below |
-| `HEALTH_PORT` | `18080` | Host network mode only: loopback port of the internal healthcheck inbound |
 | `IMAGE_TAG` | `latest` | Image tag, see "Versions and updates" |
 
 Without a login, any device that can reach the ports can use the proxy, which is what you want in a home
@@ -194,8 +193,8 @@ COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml
 ```
 and recreate the container: `docker compose up -d`. Then:
 - Xray listens directly on the host: `HTTP_PORT` (default 9000) and `SOCKS_PORT` (1080) on `BIND_ADDR`
-  (default all IPv4 interfaces), plus `HEALTH_PORT` (18080) on `127.0.0.1` for the healthcheck. These ports must
-  be free on the host; a host firewall must allow TCP and UDP to `SOCKS_PORT` and UDP to high ports from the LAN.
+  (default all IPv4 interfaces), nothing else. Pick any free ports in `.env`. A host firewall must allow
+  TCP and UDP to `SOCKS_PORT` and UDP to high ports from the LAN.
 - In Telegram (mobile: Settings → Data and Storage → Proxy; desktop: Settings → Advanced → Connection type)
   add a **SOCKS5** proxy `HOST:1080` (and the login if set) and enable **Use proxy for calls**.
 - If UDP still fails on a host with several addresses, set `BIND_ADDR` to the host's LAN address.

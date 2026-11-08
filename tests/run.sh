@@ -174,7 +174,7 @@ fi
 run_entry "$TWO"
 if expect_ok "two links"; then
   check "two links: outbounds" "$(jq -c '[.outbounds[] | [.tag, .settings.vnext[0].address // null]]' "$CFG")" '[["proxy-1","203.0.113.10"],["proxy-2","198.51.100.20"],["direct",null]]'
-  check "two links: balancer" "$(jq -c '.routing | [.rules[0].inboundTag, .rules[0].balancerTag, .balancers[0].selector, .balancers[0].fallbackTag, .balancers[0].strategy.type]' "$CFG")" '[["http-in","socks-in","health-in"],"links",["proxy-"],"proxy-1","leastPing"]'
+  check "two links: balancer" "$(jq -c '.routing | [.rules[0].inboundTag, .rules[0].balancerTag, .balancers[0].selector, .balancers[0].fallbackTag, .balancers[0].strategy.type]' "$CFG")" '[["http-in","socks-in"],"links",["proxy-"],"proxy-1","leastPing"]'
   check "two links: observatory" "$(jq -c '.observatory | [.subjectSelector, .probeUrl, .probeInterval, .enableConcurrency]' "$CFG")" '[["proxy-"],"https://www.gstatic.com/generate_204","1m",true]'
   check "two links: names in summary" "$(printf '%s' "$OUT" | grep -c -e 'link 1 (Primary NL)' -e 'link 2 (backup)' -e '2 links, failover=leastPing')" 3
 fi
@@ -198,14 +198,13 @@ run_entry "$TWO"
 if printf '%s' "$OUT" | grep -q -e "$UUID" -e "$PBK"; then bad "two links: no secrets in output" "$OUT"; else ok "two links: no secrets in output"; fi
 
 run_entry "$BASE"
-check "health inbound on container loopback" "$(jq -c '.inbounds[] | select(.tag == "health-in") | [.listen, .port, .settings.accounts]' "$CFG")" '["127.0.0.1",18080,null]'
 
 # ---- listen address and ports (host network mode) ----
 run_entry "$BASE"
-check "default listen" "$(jq -c '[.inbounds[] | [.tag, .listen, .port]]' "$CFG")" '[["http-in","0.0.0.0",8080],["socks-in","0.0.0.0",1080],["health-in","127.0.0.1",18080]]'
+check "default listen" "$(jq -c '[.inbounds[] | [.tag, .listen, .port]]' "$CFG")" '[["http-in","0.0.0.0",8080],["socks-in","0.0.0.0",1080]]'
 
-run_entry "$BASE" LISTEN_ADDR=192.168.0.12 HTTP_LISTEN_PORT=9000 SOCKS_LISTEN_PORT=1081 HEALTH_PORT=18081
-expect_ok "custom listen" && check "custom listen" "$(jq -c '[.inbounds[] | [.tag, .listen, .port]]' "$CFG")" '[["http-in","192.168.0.12",9000],["socks-in","192.168.0.12",1081],["health-in","127.0.0.1",18081]]'
+run_entry "$BASE" LISTEN_ADDR=192.168.0.12 HTTP_LISTEN_PORT=9000 SOCKS_LISTEN_PORT=1081
+expect_ok "custom listen" && check "custom listen" "$(jq -c '[.inbounds[] | [.tag, .listen, .port]]' "$CFG")" '[["http-in","192.168.0.12",9000],["socks-in","192.168.0.12",1081]]'
 
 run_entry "$BASE" LISTEN_ADDR=::
 expect_ok "IPv6 any listen" && check "IPv6 any listen" "$(jqv '.inbounds[0].listen')" "::"

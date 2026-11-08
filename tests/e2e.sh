@@ -123,7 +123,7 @@ printf '%s\n' "${VISION/@v2h-srv:4443/@127.0.0.1:4443}" > "$WORK/vless.conf"
 host_client() {
   docker rm -f v2h-cli >/dev/null 2>&1 || true
   docker run -d --name v2h-cli --network host -v "$WORK/vless.conf:/app/vless.conf:ro" \
-    -e LISTEN_ADDR=127.0.0.1 -e HTTP_LISTEN_PORT=19100 -e SOCKS_LISTEN_PORT=11180 -e HEALTH_PORT=18181 \
+    -e LISTEN_ADDR=127.0.0.1 -e HTTP_LISTEN_PORT=19100 -e SOCKS_LISTEN_PORT=11180 \
     "$@" "$IMAGE" >/dev/null
 }
 host_client
@@ -138,5 +138,8 @@ host_client -e PROXY_USER=e2e -e PROXY_PASS=secret
 wait_ok "host mode with login: HTTP" --proxy http://e2e:secret@127.0.0.1:19100
 python3 tests/socks5_udp.py 127.0.0.1 11180 e2e secret || fail "host mode: UDP through SOCKS5 with login"
 echo "ok   - host mode: UDP through SOCKS5 with login"
+health 0   # healthcheck uses the proxy itself: custom LISTEN_ADDR/port and the login
+if docker exec v2h-cli sh -c 'ss -ltn 2>/dev/null || netstat -ltn' | grep -q ':18080'; then fail "port 18080 is still open"; fi
+echo "ok   - no extra healthcheck port"
 
 echo "e2e: all passed"

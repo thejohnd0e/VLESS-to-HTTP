@@ -20,7 +20,6 @@ XRAY_BIN="${XRAY_BIN:-/usr/local/bin/Xray}"
 #   LISTEN_ADDR        address the HTTP/SOCKS5 inbounds listen on (default 0.0.0.0)
 #   HTTP_LISTEN_PORT   HTTP proxy port (default 8080)
 #   SOCKS_LISTEN_PORT  SOCKS5 proxy port (default 1080)
-#   HEALTH_PORT        internal healthcheck port on 127.0.0.1 (default 18080)
 LOG_LEVEL="${LOG_LEVEL:-warning}"
 PROXY_USER="${PROXY_USER:-}"
 PROXY_PASS="${PROXY_PASS:-}"
@@ -32,8 +31,6 @@ PROBE_INTERVAL="${PROBE_INTERVAL:-1m}"
 LISTEN_ADDR="${LISTEN_ADDR:-0.0.0.0}"
 HTTP_LISTEN_PORT="${HTTP_LISTEN_PORT:-8080}"
 SOCKS_LISTEN_PORT="${SOCKS_LISTEN_PORT:-1080}"
-# Internal HTTP inbound for the healthcheck: loopback only, never published, no login.
-HEALTH_PORT="${HEALTH_PORT:-18080}"
 
 die() { echo "ERR: $*" >&2; exit 23; }
 
@@ -60,12 +57,11 @@ pct_decode() {
 }
 
 # ---- runtime options ----
-for p in "$HTTP_LISTEN_PORT" "$SOCKS_LISTEN_PORT" "$HEALTH_PORT"; do
+for p in "$HTTP_LISTEN_PORT" "$SOCKS_LISTEN_PORT"; do
   case "$p" in ''|*[!0-9]*) die "ports must be numbers 1-65535 (got '$p')" ;; esac
   [ "${#p}" -le 5 ] && [ "$p" -ge 1 ] && [ "$p" -le 65535 ] || die "port $p out of range"
 done
-[ "$HTTP_LISTEN_PORT" != "$SOCKS_LISTEN_PORT" ] && [ "$HTTP_LISTEN_PORT" != "$HEALTH_PORT" ] &&
-  [ "$SOCKS_LISTEN_PORT" != "$HEALTH_PORT" ] || die "HTTP, SOCKS5 and health ports must differ"
+[ "$HTTP_LISTEN_PORT" != "$SOCKS_LISTEN_PORT" ] || die "HTTP and SOCKS5 ports must differ"
 case "$LISTEN_ADDR" in
   ''|*[!0-9A-Fa-f.:]*) die "LISTEN_ADDR must be an IP address (got '$LISTEN_ADDR')" ;;
 esac
@@ -241,7 +237,7 @@ $LINKS
 EOF
 
 # ---- routing: one link goes straight out; several links go through a balancer ----
-IN_TAGS='"http-in", "socks-in", "health-in"'
+IN_TAGS='"http-in", "socks-in"'
 if [ "$COUNT" -eq 1 ]; then
   ROUTING="\"routing\": { \"rules\": [ { \"type\": \"field\", \"inboundTag\": [ $IN_TAGS ], \"outboundTag\": \"proxy-1\" } ] },"
   OBSERVATORY=""
@@ -273,13 +269,6 @@ cat > "$CFG" <<EOF
       "protocol": "socks",
       "listen": "${LISTEN_ADDR}",
       "settings": ${SOCKS_SETTINGS}
-    },
-    {
-      "tag": "health-in",
-      "port": ${HEALTH_PORT},
-      "protocol": "http",
-      "listen": "127.0.0.1",
-      "settings": { "timeout": 30 }
     }
   ],
   ${ROUTING}
