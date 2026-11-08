@@ -1,7 +1,7 @@
 [![Xray Core](https://img.shields.io/badge/Xray-Core-00BFFF?style=for-the-badge)](https://github.com/XTLS/Xray-core)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 [![SOCKS5](https://img.shields.io/badge/Proxy-SOCKS5-ff6b35?style=for-the-badge)](https://en.wikipedia.org/wiki/SOCKS)
-[![Shell](https://img.shields.io/badge/Shell-Bash-4EAA25?style=for-the-badge&logo=gnu-bash&logoColor=white)](https://www.gnu.org/software/bash/)
+[![Shell](https://img.shields.io/badge/Shell-POSIX%20sh-4EAA25?style=for-the-badge&logo=gnu-bash&logoColor=white)](https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2ea44f?style=for-the-badge)](./LICENSE)
 
 
@@ -18,9 +18,10 @@ Designed for simplicity: paste your VLESS link into `vless.conf`, run Docker, an
 - Supports `tcp` and `xhttp` transports
 - HTTP proxy inbound (works for HTTP and HTTPS via CONNECT)
 - SOCKS5 proxy inbound
-- Auto-generated and printed `config.json` (easy debugging)
+- Auto-generated `config.json`; secrets stay out of the logs (optional masked dump with `PRINT_CONFIG=1`)
+- Optional login/password for both proxies (`PROXY_USER`/`PROXY_PASS`)
 - Minimal footprint, no host dependencies besides Docker
-- Default host ports: **9000** (HTTP/HTTPS) and **1080** (SOCKS5), configurable in `docker-compose.yml`
+- Default host ports: **9000** (HTTP/HTTPS) and **1080** (SOCKS5) on all interfaces (shared with the whole LAN), configurable in `.env`
 
 ---
 ## Related Projects
@@ -46,6 +47,8 @@ VLESS-to-HTTP/
 ├── docker-compose.yml     # docker compose service
 ├── Dockerfile             # image build (CI publishes it to ghcr.io; also usable locally)
 ├── entrypoint.sh          # parses vless.conf → generates config.json
+├── .env.example           # optional settings: bind address, ports, login, log level
+├── tests/run.sh           # parser tests (synthetic links, Xray stubbed)
 └── vless.conf             # your VLESS Reality URL (single line)
 ```
 
@@ -83,7 +86,8 @@ Example:
 vless://49b4b82b-73f0-4772-86ca-ca5059375c63@45.127.127.127:443?security=reality&encryption=none&pbk=6ECfTRNxRBiv7GLIIwOhwlkDs9NyYoZ7lHZrWeU1Q&fp=chrome&sni=github.com&sid=c8aa6a68a476c885&spx=/&flow=xtls-rprx-vision
 ```
 
-> Tip: keep it on a single line; comments after `#` are ignored.
+> Tip: the link must be on one line. The first line that starts with `vless://` is used; other lines
+> (e.g. `# comments`) and a `#name` fragment after the link are ignored. An empty `sid=` is accepted.
 
 ---
 
@@ -102,14 +106,38 @@ docker compose start     # start it again
 docker compose down      # stop and remove the container
 ```
 
-Logs (shows the generated config and Xray output):
+Logs (a one-line startup summary without the UUID or keys, then Xray warnings and errors):
 ```bash
 docker logs -f vless-to-http
 ```
+Logs are rotated (3 × 10 MB).
 
 By default:
-- HTTP/HTTPS proxy: **http://127.0.0.1:9000**
-- SOCKS5 proxy: **socks5://127.0.0.1:1080**
+- HTTP/HTTPS proxy: **http://HOST:9000**
+- SOCKS5 proxy: **socks5://HOST:1080**
+
+`HOST` is the LAN address of the machine running the container (or `127.0.0.1` on that machine itself):
+every device in your network can point its proxy settings there.
+
+## 🔐 Settings and optional login
+Optional settings go into `.env` next to `docker-compose.yml` (`cp .env.example .env`):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BIND_ADDR` | empty | Host address the ports are published on: empty = all interfaces (IPv4 and IPv6), a LAN address = that network only, `127.0.0.1` = this machine only |
+| `HTTP_PORT` / `SOCKS_PORT` | `9000` / `1080` | Host ports |
+| `PROXY_USER` / `PROXY_PASS` | empty | Login for both proxies (set both or neither) |
+| `LOG_LEVEL` | `warning` | `debug`, `info`, `warning`, `error`, `none`. `debug`/`info` also log every visited destination |
+| `PRINT_CONFIG` | `0` | `1` prints the generated `config.json` at startup with UUID, keys and password masked |
+
+Without a login, any device that can reach the ports can use the proxy, which is what you want in a home
+LAN. If the host is also reachable from untrusted networks (a public IP, a guest Wi-Fi), set a login or
+restrict `BIND_ADDR`:
+```bash
+PROXY_USER=me
+PROXY_PASS=a-long-random-password
+```
+then `docker compose up -d`. Clients use `http://me:PASSWORD@HOST:9000` or `socks5://me:PASSWORD@HOST:1080`.
 
 ---
 
@@ -129,6 +157,10 @@ Test SOCKS5:
 ```bash
 curl --socks5-hostname 127.0.0.1:1080 https://api.ipify.org -m 10 -v
 ```
+
+With a login: `curl -x http://me:PASSWORD@127.0.0.1:9000 ...` / `curl --socks5-hostname 127.0.0.1:1080 --proxy-user me:PASSWORD ...`.
+
+Parser tests (needs `sh` and `jq`, no Docker, no real link): `sh tests/run.sh`
 
 ---
 
@@ -170,7 +202,10 @@ Do this when your server's Xray-core is updated: newer servers can refuse client
 ## 🛠 Troubleshooting
 
 - **Container restarts with code 23**
-  - `vless.conf` missing or has empty/invalid mandatory parameters.
+  - `vless.conf` missing, has no `vless://` line, has empty/invalid mandatory parameters, or `.env` has
+    an invalid `LOG_LEVEL` / only one of `PROXY_USER`/`PROXY_PASS`. The `ERR:` line in the log says which.
+- **HTTP 407 / SOCKS authentication failed**
+  - `PROXY_USER`/`PROXY_PASS` are set; pass them in the client.
 - **HTTP returns 503**
   - Usually your VLESS parameters are incorrect (pbk/sid/sni/flow).
 - **Container exits with `ERR: empty PATH for xhttp transport`**
@@ -182,8 +217,9 @@ Do this when your server's Xray-core is updated: newer servers can refuse client
     old client core or an outdated fingerprint: current Xray servers reject a TLS ClientHello without
     `X25519MLKEM768`. Use `fp=chrome` (the default when `fp` is omitted) and update the image with
     `docker compose pull && docker compose up -d` (see "Update the Xray core").
-- View the generated config section in logs between:
-  - `===== GENERATED CONFIG =====` … `============================`
+- To see the generated config, set `PRINT_CONFIG=1` (and `LOG_LEVEL=debug` for detailed Xray logs), restart,
+  and look between `===== GENERATED CONFIG (secrets masked) =====` … `====`. Secrets are masked, but the log
+  still shows your server address; check it before sharing.
 
 ---
 

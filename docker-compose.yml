@@ -4,9 +4,20 @@ services:
     image: ghcr.io/thejohnd0e/vless-to-http:latest
     build: .
     ports:
-      - "9000:8080"   # HTTP proxy
-      - "1080:1080"   # SOCKS5 proxy
-
+      # Published on all interfaces (IPv4 and IPv6) by default, so every device in the LAN can use
+      # the proxy. Set BIND_ADDR in .env to restrict it (a LAN address, or 127.0.0.1 = this machine only).
+      - "${BIND_ADDR:+${BIND_ADDR}:}${HTTP_PORT:-9000}:8080"    # HTTP proxy
+      - "${BIND_ADDR:+${BIND_ADDR}:}${SOCKS_PORT:-1080}:1080"   # SOCKS5 proxy
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-warning}
+      PROXY_USER: ${PROXY_USER:-}
+      PROXY_PASS: ${PROXY_PASS:-}
+      PRINT_CONFIG: ${PRINT_CONFIG:-0}
     volumes:
       - ./vless.conf:/app/vless.conf:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
