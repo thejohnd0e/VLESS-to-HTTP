@@ -1,0 +1,4 @@
+# Shell scripts and the Dockerfile must keep LF endings, also in Windows checkouts:
+# a CRLF entrypoint.sh in a locally built image fails with "/bin/sh^M: not found".
+*.sh       text eol=lf
+Dockerfile text eol=lf

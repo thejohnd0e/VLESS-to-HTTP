@@ -1,0 +1,41 @@
+name: test
+
+# Static checks and parser tests for entrypoint.sh. Synthetic links only; no tunnel is started.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ShellCheck
+        run: shellcheck -s sh entrypoint.sh tests/run.sh
+
+      - name: Parser tests in Alpine (busybox sh/sed, as in the image)
+        run: docker run --rm -v "$PWD:/w:ro" -w /w alpine:3.20 sh -c 'apk add -q --no-cache jq && sh tests/run.sh'
+
+      - name: Build the image
+        run: docker build -t vless-to-http:test .
+
+      - name: Validate generated configs with the bundled Xray-core
+        run: |
+          set -eu
+          uuid=11111111-2222-3333-4444-555555555555
+          pbk=SyntheticPublicKey0123456789abcdefghijklmnopq
+          check() {
+            printf '%s\n' "$1" > vless.conf
+            shift
+            # XRAY_BIN=/bin/true: the entrypoint only renders config.json; then Xray validates it.
+            docker run --rm -v "$PWD/vless.conf:/app/vless.conf:ro" -e XRAY_BIN=/bin/true "$@" \
+              vless-to-http:test sh -c '/app/entrypoint.sh && Xray run -test -config /app/config.json'
+          }
+          check "vless://$uuid@203.0.113.10:443?security=reality&pbk=$pbk&sni=example.com&sid=abcd&flow=xtls-rprx-vision"
+          check "vless://$uuid@203.0.113.10:443?security=reality&pbk=$pbk&sni=example.com&sid=" -e PROXY_USER=alice -e 'PROXY_PASS=p"w\d'
+          check "vless://$uuid@203.0.113.10:443?security=reality&type=xhttp&path=%2Fx&mode=auto&pbk=$pbk&sni=example.com&sid=ab" -e LOG_LEVEL=debug
