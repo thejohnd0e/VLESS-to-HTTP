@@ -16,6 +16,10 @@ XRAY_BIN="${XRAY_BIN:-/usr/local/bin/Xray}"
 #   FAILOVER_STRATEGY  with several links: leastPing (default) | random | roundRobin.
 #   PROBE_URL          URL the observatory and the healthcheck request through the tunnel.
 #   PROBE_INTERVAL     pause between observatory probe rounds (default 1m).
+#   Listening (only needed with network_mode: host, see docker-compose.host.yml):
+#   LISTEN_ADDR        address the HTTP/SOCKS5 inbounds listen on (default 0.0.0.0)
+#   HTTP_LISTEN_PORT   HTTP proxy port (default 8080)
+#   SOCKS_LISTEN_PORT  SOCKS5 proxy port (default 1080)
 LOG_LEVEL="${LOG_LEVEL:-warning}"
 PROXY_USER="${PROXY_USER:-}"
 PROXY_PASS="${PROXY_PASS:-}"
@@ -24,8 +28,9 @@ FAILOVER_STRATEGY="${FAILOVER_STRATEGY:-leastPing}"
 PROBE_URL="${PROBE_URL:-https://www.gstatic.com/generate_204}"
 PROBE_INTERVAL="${PROBE_INTERVAL:-1m}"
 
-# Internal HTTP inbound for the healthcheck: container loopback only, never published, no login.
-HEALTH_PORT=18080
+LISTEN_ADDR="${LISTEN_ADDR:-0.0.0.0}"
+HTTP_LISTEN_PORT="${HTTP_LISTEN_PORT:-8080}"
+SOCKS_LISTEN_PORT="${SOCKS_LISTEN_PORT:-1080}"
 
 die() { echo "ERR: $*" >&2; exit 23; }
 
@@ -52,6 +57,14 @@ pct_decode() {
 }
 
 # ---- runtime options ----
+for p in "$HTTP_LISTEN_PORT" "$SOCKS_LISTEN_PORT"; do
+  case "$p" in ''|*[!0-9]*) die "ports must be numbers 1-65535 (got '$p')" ;; esac
+  [ "${#p}" -le 5 ] && [ "$p" -ge 1 ] && [ "$p" -le 65535 ] || die "port $p out of range"
+done
+[ "$HTTP_LISTEN_PORT" != "$SOCKS_LISTEN_PORT" ] || die "HTTP and SOCKS5 ports must differ"
+case "$LISTEN_ADDR" in
+  ''|*[!0-9A-Fa-f.:]*) die "LISTEN_ADDR must be an IP address (got '$LISTEN_ADDR')" ;;
+esac
 case "$LOG_LEVEL" in
   debug|info) ACCESS_LOG="" ;;            # "" = stdout
   warning|error|none) ACCESS_LOG="none" ;;
@@ -224,7 +237,7 @@ $LINKS
 EOF
 
 # ---- routing: one link goes straight out; several links go through a balancer ----
-IN_TAGS='"http-in", "socks-in", "health-in"'
+IN_TAGS='"http-in", "socks-in"'
 if [ "$COUNT" -eq 1 ]; then
   ROUTING="\"routing\": { \"rules\": [ { \"type\": \"field\", \"inboundTag\": [ $IN_TAGS ], \"outboundTag\": \"proxy-1\" } ] },"
   OBSERVATORY=""
@@ -244,25 +257,18 @@ cat > "$CFG" <<EOF
   "inbounds": [
     {
       "tag": "http-in",
-      "port": 8080,
+      "port": ${HTTP_LISTEN_PORT},
       "protocol": "http",
-      "listen": "0.0.0.0",
+      "listen": "${LISTEN_ADDR}",
       "settings": ${HTTP_SETTINGS},
       "sniffing": { "enabled": true, "destOverride": ["http","tls"] }
     },
     {
       "tag": "socks-in",
-      "port": 1080,
+      "port": ${SOCKS_LISTEN_PORT},
       "protocol": "socks",
-      "listen": "0.0.0.0",
+      "listen": "${LISTEN_ADDR}",
       "settings": ${SOCKS_SETTINGS}
-    },
-    {
-      "tag": "health-in",
-      "port": ${HEALTH_PORT},
-      "protocol": "http",
-      "listen": "127.0.0.1",
-      "settings": { "timeout": 30 }
     }
   ],
   ${ROUTING}

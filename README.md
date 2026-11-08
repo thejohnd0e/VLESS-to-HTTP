@@ -147,7 +147,7 @@ every device in your network can point its proxy settings there.
 
 ### Health
 The image has a Docker healthcheck that makes a real request to `PROBE_URL` **through the tunnel** every
-minute (via an internal port that is not published and needs no login), so `healthy` means traffic
+minute (through the container's own HTTP proxy, with the login if one is set), so `healthy` means traffic
 actually passes, not just that the port is open:
 ```bash
 docker ps                                   # STATUS shows (healthy) / (unhealthy)
@@ -170,6 +170,8 @@ Optional settings go into `.env` next to `docker-compose.yml` (`cp .env.example 
 | `FAILOVER_STRATEGY` | `leastPing` | With several links: `leastPing` (fastest working), `random`, `roundRobin` |
 | `PROBE_URL` | `https://www.gstatic.com/generate_204` | Requested through the tunnel by the failover probes and the healthcheck; must answer 2xx/3xx |
 | `PROBE_INTERVAL` | `1m` | Pause between failover probe rounds (`30s`, `1m`, `5m`, ...) |
+| `COMPOSE_FILE` | not set | `docker-compose.yml:docker-compose.host.yml` = host network mode for UDP, see below |
+| `IMAGE_TAG` | `latest` | Image tag, see "Versions and updates" |
 
 Without a login, any device that can reach the ports can use the proxy, which is what you want in a home
 LAN. If the host is also reachable from untrusted networks (a public IP, a guest Wi-Fi), set a login or
@@ -179,6 +181,27 @@ PROXY_USER=me
 PROXY_PASS=a-long-random-password
 ```
 then `docker compose up -d`. Clients use `http://me:PASSWORD@HOST:9000` or `socks5://me:PASSWORD@HOST:1080`.
+
+## 📞 UDP (Telegram calls, games, QUIC) — host network mode
+UDP works only through **SOCKS5** (HTTP proxies carry TCP only), and only in **host network mode**:
+for every UDP session Xray hands the client a new random port, and Docker's port publishing cannot
+forward those. In the default mode TCP works for every client, UDP does not.
+
+Host network mode (**Linux only**; on Docker Desktop for Windows/macOS LAN devices cannot reach it): add to `.env`
+```bash
+COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml
+```
+and recreate the container: `docker compose up -d`. Then:
+- Xray listens directly on the host: `HTTP_PORT` (default 9000) and `SOCKS_PORT` (1080) on `BIND_ADDR`
+  (default all IPv4 interfaces), nothing else. Pick any free ports in `.env`. A host firewall must allow
+  TCP and UDP to `SOCKS_PORT` and UDP to high ports from the LAN.
+- In Telegram (mobile: Settings → Data and Storage → Proxy; desktop: Settings → Advanced → Connection type)
+  add a **SOCKS5** proxy `HOST:1080` (and the login if set) and enable **Use proxy for calls**.
+- If UDP still fails on a host with several addresses, set `BIND_ADDR` to the host's LAN address.
+- Needs Docker Compose 2.24.4 or newer (`docker compose version`).
+
+UDP to port 443 (QUIC) is not sent through a Vision (`flow=xtls-rprx-vision`) link on purpose; browsers then
+use HTTPS over TCP. Other UDP (calls, DNS, games) is carried.
 
 ---
 

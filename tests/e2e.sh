@@ -47,7 +47,8 @@ EOF
 chmod 644 "$WORK/server.json"
 
 docker network create "$NET" >/dev/null
-docker run -d --name v2h-srv --network "$NET" -v "$WORK/server.json:/srv.json:ro" \
+# Also published on the runner's loopback for the host-network-mode client (step 5).
+docker run -d --name v2h-srv --network "$NET" -p 127.0.0.1:4443:4443 -v "$WORK/server.json:/srv.json:ro" \
   --entrypoint Xray "$IMAGE" run -config /srv.json >/dev/null
 
 VISION="vless://$UUID@v2h-srv:4443?security=reality&encryption=none&pbk=$PUB&fp=chrome&sni=www.microsoft.com&sid=ab12&flow=xtls-rprx-vision#vision"
@@ -115,5 +116,30 @@ echo "# 4. only a dead link -> healthcheck fails"
 start_client "$DEADLINK"
 sleep 3
 health 1
+
+echo "# 5. host network mode: UDP through SOCKS5 (what e.g. Telegram calls need)"
+docker rm -f v2h-cli >/dev/null 2>&1 || true
+printf '%s\n' "${VISION/@v2h-srv:4443/@127.0.0.1:4443}" > "$WORK/vless.conf"
+host_client() {
+  docker rm -f v2h-cli >/dev/null 2>&1 || true
+  docker run -d --name v2h-cli --network host -v "$WORK/vless.conf:/app/vless.conf:ro" \
+    -e LISTEN_ADDR=127.0.0.1 -e HTTP_LISTEN_PORT=19100 -e SOCKS_LISTEN_PORT=11180 \
+    "$@" "$IMAGE" >/dev/null
+}
+host_client
+wait_ok "host mode: HTTP proxy on 19100" --proxy http://127.0.0.1:19100
+python3 tests/socks5_udp.py 127.0.0.1 11180 || fail "host mode: UDP through SOCKS5"
+echo "ok   - host mode: UDP (DNS) through SOCKS5"
+docker logs v2h-srv 2>&1 | grep -q "accepted udp:1.1.1.1:53" || fail "server saw no UDP to 1.1.1.1:53"
+echo "ok   - server relayed the UDP datagram"
+health 0
+
+host_client -e PROXY_USER=e2e -e PROXY_PASS=secret
+wait_ok "host mode with login: HTTP" --proxy http://e2e:secret@127.0.0.1:19100
+python3 tests/socks5_udp.py 127.0.0.1 11180 e2e secret || fail "host mode: UDP through SOCKS5 with login"
+echo "ok   - host mode: UDP through SOCKS5 with login"
+health 0   # healthcheck uses the proxy itself: custom LISTEN_ADDR/port and the login
+if docker exec v2h-cli sh -c 'ss -ltn 2>/dev/null || netstat -ltn' | grep -q ':18080'; then fail "port 18080 is still open"; fi
+echo "ok   - no extra healthcheck port"
 
 echo "e2e: all passed"
