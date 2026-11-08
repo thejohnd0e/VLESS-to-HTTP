@@ -40,6 +40,11 @@ jobs:
           [ "$got" = '[[null,"9000",8080],[null,"1080",1080]]' ]
           got=$(BIND_ADDR=192.168.0.12 HTTP_PORT=3128 ports);   echo "restricted: $got"
           [ "$got" = '[["192.168.0.12","3128",8080],["192.168.0.12","1080",1080]]' ]
+          # host network mode override: no published ports, Xray listens on HTTP_PORT/SOCKS_PORT itself
+          host=$(COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml HTTP_PORT=3128 docker compose config --format json |
+            jq -c '.services."vless-proxy" | [.network_mode, (.ports // []), .environment.LISTEN_ADDR, .environment.HTTP_LISTEN_PORT, .environment.SOCKS_LISTEN_PORT]')
+          echo "host mode: $host"
+          [ "$host" = '["host",[],"0.0.0.0","3128","1080"]' ]
 
       - name: Build the image
         run: docker build -t vless-to-http:test .

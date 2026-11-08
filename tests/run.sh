@@ -200,6 +200,28 @@ if printf '%s' "$OUT" | grep -q -e "$UUID" -e "$PBK"; then bad "two links: no se
 run_entry "$BASE"
 check "health inbound on container loopback" "$(jq -c '.inbounds[] | select(.tag == "health-in") | [.listen, .port, .settings.accounts]' "$CFG")" '["127.0.0.1",18080,null]'
 
+# ---- listen address and ports (host network mode) ----
+run_entry "$BASE"
+check "default listen" "$(jq -c '[.inbounds[] | [.tag, .listen, .port]]' "$CFG")" '[["http-in","0.0.0.0",8080],["socks-in","0.0.0.0",1080],["health-in","127.0.0.1",18080]]'
+
+run_entry "$BASE" LISTEN_ADDR=192.168.0.12 HTTP_LISTEN_PORT=9000 SOCKS_LISTEN_PORT=1081 HEALTH_PORT=18081
+expect_ok "custom listen" && check "custom listen" "$(jq -c '[.inbounds[] | [.tag, .listen, .port]]' "$CFG")" '[["http-in","192.168.0.12",9000],["socks-in","192.168.0.12",1081],["health-in","127.0.0.1",18081]]'
+
+run_entry "$BASE" LISTEN_ADDR=::
+expect_ok "IPv6 any listen" && check "IPv6 any listen" "$(jqv '.inbounds[0].listen')" "::"
+
+run_entry "$BASE" HTTP_LISTEN_PORT=70000
+expect_fail "port out of range" "out of range"
+run_entry "$BASE" SOCKS_LISTEN_PORT=abc
+expect_fail "port not a number" "ports must be numbers"
+run_entry "$BASE" SOCKS_LISTEN_PORT=8080
+expect_fail "same port twice" "must differ"
+run_entry "$BASE" LISTEN_ADDR=lan0
+expect_fail "LISTEN_ADDR not an IP" "LISTEN_ADDR must be"
+
+run_entry "$BASE"
+check "socks UDP on, no fixed ip (Xray answers with the address the client connected to)" "$(jq -c '.inbounds[1].settings | [.udp, .ip]' "$CFG")" '[true,null]'
+
 # ---- unchanged behaviour ----
 run_entry "vless://$UUID@203.0.113.10:443?security=reality&type=xhttp&path=%2Fmy-path&host=example.com&mode=auto&pbk=$PBK&sni=example.com&sid=ab"
 expect_ok "xhttp" && check "xhttp" "$(jq -c '.outbounds[0].streamSettings | [.network, .xhttpSettings.path, .xhttpSettings.host, .xhttpSettings.mode]' "$CFG")" '["xhttp","/my-path","example.com","auto"]'

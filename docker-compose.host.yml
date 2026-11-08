@@ -1,0 +1,14 @@
+# Host network mode: the container uses the host's network directly (Linux only).
+# Needed for UDP through SOCKS5 (e.g. Telegram calls): Xray hands every UDP session a random port,
+# which Docker's port publishing cannot forward. Enable it with one line in .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml
+# HTTP_PORT, SOCKS_PORT and BIND_ADDR from .env then apply to Xray itself.
+services:
+  vless-proxy:
+    network_mode: host
+    ports: !reset []
+    environment:
+      LISTEN_ADDR: ${BIND_ADDR:-0.0.0.0}
+      HTTP_LISTEN_PORT: ${HTTP_PORT:-9000}
+      SOCKS_LISTEN_PORT: ${SOCKS_PORT:-1080}
+      HEALTH_PORT: ${HEALTH_PORT:-18080}
