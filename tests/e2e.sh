@@ -104,7 +104,8 @@ docker start v2h-srv >/dev/null
 echo "# 3. single XHTTP link with login"
 start_client "$XHTTP" -e PROXY_USER=e2e -e PROXY_PASS='p"w\d'
 wait_ok "SOCKS5 with login over XHTTP" --socks5-hostname 127.0.0.1:11080 --proxy-user 'e2e:p"w\d'
-code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --proxy http://127.0.0.1:19000 "$URL" || true)"
+# For an https:// URL the 407 is the answer to CONNECT, which curl reports as %{http_connect}.
+code="$(curl -s -o /dev/null -w '%{http_connect}' --max-time 5 --proxy http://127.0.0.1:19000 "$URL" || true)"
 [ "$code" = 407 ] || fail "HTTP without login: got $code, want 407"
 echo "ok   - HTTP without login is refused (407)"
 server_saw e2e-xhttp
