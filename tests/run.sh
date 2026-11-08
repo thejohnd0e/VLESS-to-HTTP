@@ -14,7 +14,7 @@ printf '#!/bin/sh\nexit 0\n' > "$STUB"
 chmod +x "$STUB"
 
 UUID=11111111-2222-3333-4444-555555555555
-PBK=SyntheticPublicKey0123456789abcdefghijklmnopq
+PBK=AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA
 BASE="vless://$UUID@203.0.113.10:443?security=reality&encryption=none&pbk=$PBK&fp=chrome&sni=example.com&sid=abcd1234&flow=xtls-rprx-vision"
 
 PASS=0
