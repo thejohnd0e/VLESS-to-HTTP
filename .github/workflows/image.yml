@@ -1,13 +1,15 @@
 name: image
 
 # Builds a multi-arch image with the current stable Xray-core and publishes it to ghcr.io.
-# Runs on code changes, once a day (picks up new Xray releases) and on demand.
+# Runs on code changes, once a day (picks up new Xray releases), once a week (rebuilds anyway to pick
+# up Alpine security updates) and on demand. Publishes only after the test workflow passes.
 on:
   push:
     branches: [master]
-    paths: [Dockerfile, entrypoint.sh, .github/workflows/image.yml]
+    paths: [Dockerfile, entrypoint.sh, healthcheck.sh, .github/workflows/image.yml, .github/workflows/test.yml]
   schedule:
-    - cron: "17 4 * * *"
+    - cron: "17 4 * * *"    # daily: only when a new Xray release is out
+    - cron: "41 5 * * 1"    # weekly: always rebuild
   workflow_dispatch:
 
 permissions:
@@ -15,7 +17,11 @@ permissions:
   packages: write
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   image:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,10 +41,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Skip the scheduled run when this Xray version is already published
+      - name: Skip the daily run when this Xray version is already published
         id: skip
         run: |
-          if [[ ${{ github.event_name }} == schedule ]] && docker manifest inspect "${{ steps.xray.outputs.image }}:${{ steps.xray.outputs.version }}" > /dev/null 2>&1; then
+          if [[ "${{ github.event.schedule }}" == "17 4 * * *" ]] && docker manifest inspect "${{ steps.xray.outputs.image }}:${{ steps.xray.outputs.version }}" > /dev/null 2>&1; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -56,6 +62,8 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          pull: true
+          no-cache: true
           build-args: XRAY_VERSION=${{ steps.xray.outputs.tag }}
           tags: |
             ${{ steps.xray.outputs.image }}:${{ steps.xray.outputs.version }}

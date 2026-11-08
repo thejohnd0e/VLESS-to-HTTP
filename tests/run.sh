@@ -116,6 +116,90 @@ expect_fail "only PROXY_PASS" "set both PROXY_USER and PROXY_PASS"
 run_entry "$BASE" PROXY_USER=a:b PROXY_PASS=x
 expect_fail "':' in PROXY_USER" "must not contain ':'"
 
+# ---- parser: URI edge cases ----
+L="vless://$UUID@"
+Q="pbk=$PBK&sni=example.com&sid=ab"
+ob='.outbounds[0]'
+
+run_entry "${L}[2001:db8::1]:8443?$Q"
+expect_ok "IPv6 server" && check "IPv6 server" "$(jq -c "$ob.settings.vnext[0] | [.address, .port]" "$CFG")" '["2001:db8::1",8443]'
+
+run_entry "${L}203.0.113.10:443?type=xhttp&path=%2Fx&host=cdn.example.com:8443&$Q"
+expect_ok "colon in host= does not change the port" && check "colon in host= does not change the port" "$(jqv "$ob.settings.vnext[0].port")" 443
+
+run_entry "${L}203.0.113.10:0443/?$Q"
+expect_ok "leading zero port and trailing slash" && check "leading zero port and trailing slash" "$(jqv "$ob.settings.vnext[0].port")" 443
+
+run_entry "${L}203.0.113.10:443?$Q&spx=%2fabc%3Fq%3D1&type=xhttp&path=%2Fp%20x"
+expect_ok "percent decoding" && check "percent decoding" "$(jq -c "$ob.streamSettings | [.realitySettings.spiderX, .xhttpSettings.path]" "$CFG")" '["/abc?q=1","/p x"]'
+
+run_entry "${L}203.0.113.10:443?pbk=$PBK&sni=a%22b%5Cc&sid=ab"
+expect_ok "quote and backslash are JSON-escaped" && check "quote and backslash are JSON-escaped" "$(jqv "$ob.streamSettings.realitySettings.serverName")" 'a"b\c'
+
+run_entry "${L}203.0.113.10:443?$Q&type=raw"
+expect_ok "type=raw is tcp" && check "type=raw is tcp" "$(jqv "$ob.streamSettings.network")" tcp
+
+run_entry "${L}203.0.113.10:443?$Q&encryption=mlkem768x25519plus.native.0rtt.SYNTH&pqv=SYNTHPQV"
+expect_ok "VLESS Encryption and pqv" && check "VLESS Encryption and pqv" "$(jq -c "$ob | [.settings.vnext[0].users[0].encryption, .streamSettings.realitySettings.mldsa65Verify]" "$CFG")" '["mlkem768x25519plus.native.0rtt.SYNTH","SYNTHPQV"]'
+
+run_entry "${L}203.0.113.10:443?$Q&type=xhttp&path=/x&extra=%7B%22xmux%22%3A%7B%22maxConcurrency%22%3A%2216-32%22%7D%7D"
+expect_ok "xhttp extra" && check "xhttp extra" "$(jq -c "$ob.streamSettings.xhttpSettings.extra" "$CFG")" '{"xmux":{"maxConcurrency":"16-32"}}'
+
+run_entry "${L}203.0.113.10:443?$Q&security=tls"
+expect_fail "security=tls rejected" "only reality"
+run_entry "${L}203.0.113.10:443?$Q&headerType=http"
+expect_fail "headerType=http rejected" "headerType"
+run_entry "${L}203.0.113.10:99999?$Q"
+expect_fail "port out of range" "out of range"
+run_entry "${L}203.0.113.10?$Q"
+expect_fail "missing port" "no port"
+run_entry "vless://203.0.113.10:443?$Q"
+expect_fail "missing @" "no '@'"
+run_entry "${L}203.0.113.10:443?$Q&sni=a%0Ab"
+expect_fail "encoded newline rejected" "control characters"
+run_entry "${L}bad\"host:443?$Q"
+expect_fail "bad server address" "bad server address"
+
+# ---- several links: balancer + observatory ----
+TWO="# primary
+${L}203.0.113.10:443?$Q&flow=xtls-rprx-vision#Primary%20NL
+# backup
+${L}198.51.100.20:8443?$Q&type=xhttp&path=/x#backup"
+
+run_entry "${L}203.0.113.10:443?$Q#only"
+if expect_ok "one link: no balancer"; then
+  check "one link: no balancer" "$(jq -c '[.routing.rules[0].outboundTag, .routing.balancers, .observatory, (.outbounds | map(.tag))]' "$CFG")" '["proxy-1",null,null,["proxy-1","direct"]]'
+fi
+
+run_entry "$TWO"
+if expect_ok "two links"; then
+  check "two links: outbounds" "$(jq -c '[.outbounds[] | [.tag, .settings.vnext[0].address // null]]' "$CFG")" '[["proxy-1","203.0.113.10"],["proxy-2","198.51.100.20"],["direct",null]]'
+  check "two links: balancer" "$(jq -c '.routing | [.rules[0].inboundTag, .rules[0].balancerTag, .balancers[0].selector, .balancers[0].fallbackTag, .balancers[0].strategy.type]' "$CFG")" '[["http-in","socks-in","health-in"],"links",["proxy-"],"proxy-1","leastPing"]'
+  check "two links: observatory" "$(jq -c '.observatory | [.subjectSelector, .probeUrl, .probeInterval, .enableConcurrency]' "$CFG")" '[["proxy-"],"https://www.gstatic.com/generate_204","1m",true]'
+  check "two links: names in summary" "$(printf '%s' "$OUT" | grep -c -e 'link 1 (Primary NL)' -e 'link 2 (backup)' -e '2 links, failover=leastPing')" 3
+fi
+check "fallback is never direct" "$(jqv '.routing.balancers[0].fallbackTag')" proxy-1
+
+run_entry "$TWO" FAILOVER_STRATEGY=roundRobin PROBE_INTERVAL=30s PROBE_URL=https://cp.cloudflare.com/
+expect_ok "failover settings" && check "failover settings" "$(jq -c '[.routing.balancers[0].strategy.type, .observatory.probeInterval, .observatory.probeUrl]' "$CFG")" '["roundRobin","30s","https://cp.cloudflare.com/"]'
+
+run_entry "$TWO" FAILOVER_STRATEGY=fastest
+expect_fail "invalid FAILOVER_STRATEGY" "FAILOVER_STRATEGY must be"
+run_entry "$TWO" PROBE_INTERVAL=5
+expect_fail "invalid PROBE_INTERVAL" "PROBE_INTERVAL must"
+run_entry "$TWO" PROBE_URL=ftp://x
+expect_fail "invalid PROBE_URL" "PROBE_URL must"
+
+run_entry "$TWO
+${L}203.0.113.30:443?$Q&security=none"
+expect_fail "bad third link names its number" "link 3: security=none"
+
+run_entry "$TWO"
+if printf '%s' "$OUT" | grep -q -e "$UUID" -e "$PBK"; then bad "two links: no secrets in output" "$OUT"; else ok "two links: no secrets in output"; fi
+
+run_entry "$BASE"
+check "health inbound on container loopback" "$(jq -c '.inbounds[] | select(.tag == "health-in") | [.listen, .port, .settings.accounts]' "$CFG")" '["127.0.0.1",18080,null]'
+
 # ---- unchanged behaviour ----
 run_entry "vless://$UUID@203.0.113.10:443?security=reality&type=xhttp&path=%2Fmy-path&host=example.com&mode=auto&pbk=$PBK&sni=example.com&sid=ab"
 expect_ok "xhttp" && check "xhttp" "$(jq -c '.outbounds[0].streamSettings | [.network, .xhttpSettings.path, .xhttpSettings.host, .xhttpSettings.mode]' "$CFG")" '["xhttp","/my-path","example.com","auto"]'

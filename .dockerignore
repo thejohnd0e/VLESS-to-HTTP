@@ -1,0 +1,4 @@
+# Only entrypoint.sh and healthcheck.sh are copied into the image; keep secrets out of the build context.
+*
+!entrypoint.sh
+!healthcheck.sh

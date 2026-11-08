@@ -20,6 +20,9 @@ Designed for simplicity: paste your VLESS link into `vless.conf`, run Docker, an
 - SOCKS5 proxy inbound
 - Auto-generated `config.json`; secrets stay out of the logs (optional masked dump with `PRINT_CONFIG=1`)
 - Optional login/password for both proxies (`PROXY_USER`/`PROXY_PASS`)
+- Several links in `vless.conf` = automatic failover (Xray observatory + balancer, no restarts)
+- Docker healthcheck that makes a real request through the tunnel
+- Runs as a non-root user
 - Minimal footprint, no host dependencies besides Docker
 - Default host ports: **9000** (HTTP/HTTPS) and **1080** (SOCKS5) on all interfaces (shared with the whole LAN), configurable in `.env`
 
@@ -47,9 +50,11 @@ VLESS-to-HTTP/
 ├── docker-compose.yml     # docker compose service
 ├── Dockerfile             # image build (CI publishes it to ghcr.io; also usable locally)
 ├── entrypoint.sh          # parses vless.conf → generates config.json
-├── .env.example           # optional settings: bind address, ports, login, log level
+├── healthcheck.sh         # Docker healthcheck: a request through the tunnel
+├── .env.example           # optional settings: bind address, ports, login, log level, failover
 ├── tests/run.sh           # parser tests (synthetic links, Xray stubbed)
-└── vless.conf             # your VLESS Reality URL (single line)
+├── tests/e2e.sh           # end-to-end test against a throwaway local server (CI)
+└── vless.conf             # your VLESS Reality link(s), one per line
 ```
 
 ---
@@ -76,18 +81,39 @@ XHTTP example:
 vless://UUID@HOST:PORT?security=reality&encryption=none&type=xhttp&path=%2Fmy-path&host=example.com&sni=example.com&pbk=PUBLIC_KEY&sid=SHORT_ID&fp=chrome&mode=auto
 ```
 
-Supported transport query parameters:
-- `type=tcp` or `type=xhttp` (`tcp` is the default if omitted)
-- For `xhttp`, `path` is required
-- For `xhttp`, `host` and `mode` are optional
+Supported link parameters:
+- `security=reality` (the only supported security; may be omitted)
+- `pbk`, `sni` (required), `sid` (may be empty), `fp` (default `chrome`), `spx` (default `/`), `pqv`, `flow`
+- `encryption` (default `none`; a VLESS Encryption client string is passed to Xray as is)
+- `type=tcp`/`raw` or `type=xhttp` (`tcp` is the default if omitted)
+- For `xhttp`: `path` is required; `host`, `mode` and `extra` (URL-encoded JSON object) are optional
+- The server may be a hostname, an IPv4 address or an IPv6 address in brackets: `@[2001:db8::1]:443`
+- Values may be percent-encoded (`%2F`, `%3F`, ...)
 
 Example:
 ```
 vless://49b4b82b-73f0-4772-86ca-ca5059375c63@45.127.127.127:443?security=reality&encryption=none&pbk=6ECfTRNxRBiv7GLIIwOhwlkDs9NyYoZ7lHZrWeU1Q&fp=chrome&sni=github.com&sid=c8aa6a68a476c885&spx=/&flow=xtls-rprx-vision
 ```
 
-> Tip: the link must be on one line. The first line that starts with `vless://` is used; other lines
-> (e.g. `# comments`) and a `#name` fragment after the link are ignored. An empty `sid=` is accepted.
+> Tip: each link must be on one line. Every line that starts with `vless://` is used; other lines
+> (e.g. `# comments`) are ignored. A `#name` after a link is shown in the startup log.
+
+### Several links: automatic failover
+Put several links into `vless.conf`, one per line (e.g. two servers, or TCP and XHTTP to the same server):
+```
+# main server
+vless://UUID@1.2.3.4:443?security=reality&pbk=...&sni=...&sid=...&flow=xtls-rprx-vision#main
+# backup
+vless://UUID@5.6.7.8:443?security=reality&pbk=...&sni=...&sid=...&type=xhttp&path=%2Fx#backup
+```
+Xray then probes every link through its tunnel (`PROBE_URL`, every `PROBE_INTERVAL`) and sends
+traffic over a working one; the container is not restarted. With `FAILOVER_STRATEGY=leastPing` (default) the
+fastest working link is used, so a dead link is skipped after its next failed probe and is used again
+once it answers. `random` and `roundRobin` spread connections over the working links.
+If every link is down, traffic fails (it never goes out directly) and the healthcheck turns `unhealthy`.
+
+> The probes are small regular requests to `PROBE_URL` through each link. A very short
+> `PROBE_INTERVAL` produces a noticeable periodic pattern; the default `1m` is a reasonable trade-off.
 
 ---
 
@@ -106,7 +132,7 @@ docker compose start     # start it again
 docker compose down      # stop and remove the container
 ```
 
-Logs (a one-line startup summary without the UUID or keys, then Xray warnings and errors):
+Logs (a short startup summary without the UUID or keys, then Xray warnings and errors):
 ```bash
 docker logs -f vless-to-http
 ```
@@ -119,6 +145,18 @@ By default:
 `HOST` is the LAN address of the machine running the container (or `127.0.0.1` on that machine itself):
 every device in your network can point its proxy settings there.
 
+### Health
+The image has a Docker healthcheck that makes a real request to `PROBE_URL` **through the tunnel** every
+minute (via an internal port that is not published and needs no login), so `healthy` means traffic
+actually passes, not just that the port is open:
+```bash
+docker ps                                   # STATUS shows (healthy) / (unhealthy)
+docker inspect --format '{{json .State.Health}}' vless-to-http
+docker exec vless-to-http /app/healthcheck.sh   # run it now
+```
+Docker itself does not restart an `unhealthy` container; use the status for monitoring or with a tool such
+as autoheal. With several links Xray already switches to a working link on its own.
+
 ## 🔐 Settings and optional login
 Optional settings go into `.env` next to `docker-compose.yml` (`cp .env.example .env`):
 
@@ -129,6 +167,9 @@ Optional settings go into `.env` next to `docker-compose.yml` (`cp .env.example 
 | `PROXY_USER` / `PROXY_PASS` | empty | Login for both proxies (set both or neither) |
 | `LOG_LEVEL` | `warning` | `debug`, `info`, `warning`, `error`, `none`. `debug`/`info` also log every visited destination |
 | `PRINT_CONFIG` | `0` | `1` prints the generated `config.json` at startup with UUID, keys and password masked |
+| `FAILOVER_STRATEGY` | `leastPing` | With several links: `leastPing` (fastest working), `random`, `roundRobin` |
+| `PROBE_URL` | `https://www.gstatic.com/generate_204` | Requested through the tunnel by the failover probes and the healthcheck; must answer 2xx/3xx |
+| `PROBE_INTERVAL` | `1m` | Pause between failover probe rounds (`30s`, `1m`, `5m`, ...) |
 
 Without a login, any device that can reach the ports can use the proxy, which is what you want in a home
 LAN. If the host is also reachable from untrusted networks (a public IP, a guest Wi-Fi), set a login or
@@ -160,13 +201,14 @@ curl --socks5-hostname 127.0.0.1:1080 https://api.ipify.org -m 10 -v
 
 With a login: `curl -x http://me:PASSWORD@127.0.0.1:9000 ...` / `curl --socks5-hostname 127.0.0.1:1080 --proxy-user me:PASSWORD ...`.
 
-Parser tests (needs `sh` and `jq`, no Docker, no real link): `sh tests/run.sh`
+Parser tests (needs `sh` and `jq`, no Docker, no real link): `sh tests/run.sh`.
+End-to-end test (needs Docker; starts a throwaway local server with generated keys): `bash tests/e2e.sh IMAGE`.
 
 ---
 
 ## 🔄 Update / Change server
-1) Edit `vless.conf` with your new VLESS URL  
-2) Restart (the link is read when the container starts):
+1) Edit `vless.conf` (add, remove or replace links)  
+2) Restart (the links are read when the container starts):
 ```bash
 docker compose restart
 ```
@@ -175,8 +217,9 @@ docker compose restart
 **Prebuilt image (recommended).** A GitHub Actions workflow builds `linux/amd64` and `linux/arm64`
 images with the current stable Xray-core and publishes them to
 `ghcr.io/thejohnd0e/vless-to-http` (tags `latest` and the core version, e.g. `26.10.21`). It runs
-on every change to the `Dockerfile`/`entrypoint.sh` and once a day, so a new Xray release gets a new
-image within a day. To update:
+on every change to the image files, once a day (a new Xray release gets a new image within a day) and
+once a week (a full rebuild picks up Alpine security updates). An image is published only after the tests
+pass. To update:
 ```bash
 docker compose pull
 docker compose up -d
@@ -203,7 +246,12 @@ Do this when your server's Xray-core is updated: newer servers can refuse client
 
 - **Container restarts with code 23**
   - `vless.conf` missing, has no `vless://` line, has empty/invalid mandatory parameters, or `.env` has
-    an invalid `LOG_LEVEL` / only one of `PROXY_USER`/`PROXY_PASS`. The `ERR:` line in the log says which.
+    an invalid setting. The `ERR:` line in the log says which (and `link N:` which link).
+- **`ERR: ... vless.conf is not readable by the container user`**
+  - The container runs as a non-root user; make the file readable: `chmod 644 vless.conf`.
+- **Container is `unhealthy`**
+  - No request passed through the tunnel. Check the server and the link(s); `docker exec vless-to-http
+    /app/healthcheck.sh` prints the error. If `PROBE_URL` is blocked on your server, set another one.
 - **HTTP 407 / SOCKS authentication failed**
   - `PROXY_USER`/`PROXY_PASS` are set; pass them in the client.
 - **HTTP returns 503**
