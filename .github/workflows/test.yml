@@ -8,6 +8,11 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to test (default: the triggering commit)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -17,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: ShellCheck
         run: shellcheck -s sh entrypoint.sh healthcheck.sh tests/run.sh && shellcheck tests/e2e.sh

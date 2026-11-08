@@ -1,7 +1,8 @@
 services:
   vless-proxy:
     container_name: vless-to-http
-    image: ghcr.io/thejohnd0e/vless-to-http:latest
+    # IMAGE_TAG in .env pins a release, e.g. 1.0.0 or 1.0.0-xray26.10.31 (default: latest release)
+    image: ghcr.io/thejohnd0e/vless-to-http:${IMAGE_TAG:-latest}
     build: .
     ports:
       # Published on all interfaces (IPv4 and IPv6) by default, so every device in the LAN can use
