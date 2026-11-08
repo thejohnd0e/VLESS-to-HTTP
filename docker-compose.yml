@@ -13,6 +13,9 @@ services:
       PROXY_USER: ${PROXY_USER:-}
       PROXY_PASS: ${PROXY_PASS:-}
       PRINT_CONFIG: ${PRINT_CONFIG:-0}
+      FAILOVER_STRATEGY: ${FAILOVER_STRATEGY:-leastPing}
+      PROBE_URL: ${PROBE_URL:-https://www.gstatic.com/generate_204}
+      PROBE_INTERVAL: ${PROBE_INTERVAL:-1m}
     volumes:
       - ./vless.conf:/app/vless.conf:ro
     logging:
