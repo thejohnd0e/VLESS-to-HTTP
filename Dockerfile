@@ -30,13 +30,18 @@ RUN set -eux; \
 # ---- stage 2: runtime ----
 FROM alpine:3.23
 
-# Project version, set by CI (e.g. 1.0.0, or "edge"); shown in the startup log.
+# Project version and source revision, set by CI (e.g. 1.0.0, or "edge"); shown in the startup log
+# and in the image labels.
 ARG APP_VERSION=dev
+ARG GIT_REVISION=
+ARG BUILD_DATE=
 ENV APP_VERSION=${APP_VERSION}
 LABEL org.opencontainers.image.title="VLESS-to-HTTP" \
       org.opencontainers.image.source="https://github.com/thejohnd0e/VLESS-to-HTTP" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="${APP_VERSION}"
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${GIT_REVISION}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
 
 # curl is used by the healthcheck.
 RUN apk add --no-cache ca-certificates curl \
