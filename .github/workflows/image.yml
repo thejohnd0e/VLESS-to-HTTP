@@ -126,6 +126,10 @@ jobs:
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
+      - name: Build timestamp
+        id: ts
+        run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -136,6 +140,8 @@ jobs:
           build-args: |
             XRAY_VERSION=${{ needs.plan.outputs.xray_tag }}
             APP_VERSION=${{ needs.plan.outputs.version }}
+            GIT_REVISION=${{ needs.plan.outputs.ref }}
+            BUILD_DATE=${{ steps.ts.outputs.date }}
           tags: ${{ needs.plan.outputs.tags }}
 
   release:

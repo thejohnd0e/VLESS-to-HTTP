@@ -17,6 +17,7 @@ services:
       FAILOVER_STRATEGY: ${FAILOVER_STRATEGY:-leastPing}
       PROBE_URL: ${PROBE_URL:-https://www.gstatic.com/generate_204}
       PROBE_INTERVAL: ${PROBE_INTERVAL:-1m}
+      HEALTH_TIMEOUT: ${HEALTH_TIMEOUT:-10}
     volumes:
       - ./vless.conf:/app/vless.conf:ro
     logging:

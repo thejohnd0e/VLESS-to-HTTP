@@ -170,6 +170,7 @@ Optional settings go into `.env` next to `docker-compose.yml` (`cp .env.example 
 | `FAILOVER_STRATEGY` | `leastPing` | With several links: `leastPing` (fastest working), `random`, `roundRobin` |
 | `PROBE_URL` | `https://www.gstatic.com/generate_204` | Requested through the tunnel by the failover probes and the healthcheck; must answer 2xx/3xx |
 | `PROBE_INTERVAL` | `1m` | Pause between failover probe rounds (`30s`, `1m`, `5m`, ...) |
+| `HEALTH_TIMEOUT` | `10` | Seconds the Docker healthcheck request may take; raise it on a slow tunnel |
 | `COMPOSE_FILE` | not set | `docker-compose.yml:docker-compose.host.yml` = host network mode for UDP, see below |
 | `IMAGE_TAG` | `latest` | Image tag, see "Versions and updates" |
 
@@ -284,7 +285,8 @@ Do this when your server's Xray-core is updated: newer servers can refuse client
   - The container runs as a non-root user; make the file readable: `chmod 644 vless.conf`.
 - **Container is `unhealthy`**
   - No request passed through the tunnel. Check the server and the link(s); `docker exec vless-to-http
-    /app/healthcheck.sh` prints the error. If `PROBE_URL` is blocked on your server, set another one.
+    /app/healthcheck.sh` prints the error. If `PROBE_URL` is blocked on your server, set another one;
+    on a slow tunnel raise `HEALTH_TIMEOUT` in `.env`.
 - **HTTP 407 / SOCKS authentication failed**
   - `PROXY_USER`/`PROXY_PASS` are set; pass them in the client.
 - **HTTP returns 503**

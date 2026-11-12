@@ -65,7 +65,7 @@ rm -f "$WORK/vless.conf"
 OUT="$(env -i PATH="$PATH" VLESS_CONF="$WORK/missing.conf" XRAY_CONFIG="$WORK/config.json" XRAY_BIN="$STUB" sh "$ENTRY" 2>&1)"; RC=$?
 expect_fail "missing vless.conf" "not found"
 
-# ---- 4. empty sid is accepted ----
+# ---- 2. empty sid is accepted ----
 run_entry "$(printf '%s' "$BASE" | sed 's/sid=abcd1234/sid=/')"
 expect_ok "empty sid" && check "empty sid" "$(jqv '.outbounds[0].streamSettings.realitySettings.shortId')" ""
 
@@ -96,7 +96,7 @@ if expect_ok "PRINT_CONFIG=1"; then
   else bad "PRINT_CONFIG=1 masks secrets" "$OUT"; fi
 fi
 
-# ---- 1. proxy authentication ----
+# ---- 4. proxy authentication ----
 run_entry "$BASE" PROXY_USER=alice 'PROXY_PASS=p@ss "w\ord'
 if expect_ok "auth with special characters"; then
   h="$(jq -c '.inbounds[0].settings.accounts' "$CFG")"
@@ -116,7 +116,7 @@ expect_fail "only PROXY_PASS" "set both PROXY_USER and PROXY_PASS"
 run_entry "$BASE" PROXY_USER=a:b PROXY_PASS=x
 expect_fail "':' in PROXY_USER" "must not contain ':'"
 
-# ---- parser: URI edge cases ----
+# ---- 5. parser: URI edge cases ----
 L="vless://$UUID@"
 Q="pbk=$PBK&sni=example.com&sid=ab"
 ob='.outbounds[0]'
@@ -160,7 +160,7 @@ expect_fail "encoded newline rejected" "control characters"
 run_entry "${L}bad\"host:443?$Q"
 expect_fail "bad server address" "bad server address"
 
-# ---- several links: balancer + observatory ----
+# ---- 6. several links: balancer + observatory ----
 TWO="# primary
 ${L}203.0.113.10:443?$Q&flow=xtls-rprx-vision#Primary%20NL
 # backup
@@ -199,7 +199,7 @@ if printf '%s' "$OUT" | grep -q -e "$UUID" -e "$PBK"; then bad "two links: no se
 
 run_entry "$BASE"
 
-# ---- listen address and ports (host network mode) ----
+# ---- 7. listen address and ports (host network mode) ----
 run_entry "$BASE"
 check "default listen" "$(jq -c '[.inbounds[] | [.tag, .listen, .port]]' "$CFG")" '[["http-in","0.0.0.0",8080],["socks-in","0.0.0.0",1080]]'
 
@@ -221,7 +221,7 @@ expect_fail "LISTEN_ADDR not an IP" "LISTEN_ADDR must be"
 run_entry "$BASE"
 check "socks UDP on, no fixed ip (Xray answers with the address the client connected to)" "$(jq -c '.inbounds[1].settings | [.udp, .ip]' "$CFG")" '[true,null]'
 
-# ---- unchanged behaviour ----
+# ---- 8. unchanged behaviour ----
 run_entry "vless://$UUID@203.0.113.10:443?security=reality&type=xhttp&path=%2Fmy-path&host=example.com&mode=auto&pbk=$PBK&sni=example.com&sid=ab"
 expect_ok "xhttp" && check "xhttp" "$(jq -c '.outbounds[0].streamSettings | [.network, .xhttpSettings.path, .xhttpSettings.host, .xhttpSettings.mode]' "$CFG")" '["xhttp","/my-path","example.com","auto"]'
 
